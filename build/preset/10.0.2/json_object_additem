@@ -1,0 +1,31 @@
+#!/bin/sh
+LOCAL=`mktemp -d`
+echo '#!/bin/sh' > ${LOCAL}/atexit
+chmod a+x ${LOCAL}/atexit
+trap "${LOCAL}/atexit ; rm -rf $LOCAL" EXIT
+trap "exit" INT QUIT TERM
+JSON=${LOCAL}/j
+OUT=${LOCAL}/out
+JFILE=$1
+POS=$2
+KEY=$3
+J=$4
+if [ -z "$J" ] ; then
+    echo Usage: $0 JFILE POS KEY JSON >&2
+    exit 1
+fi
+echo "$J" > $JSON
+if ! jq . "$JSON" > /dev/null 2>&1 ; then
+    echo "'$JSON' not in JSON" >&2
+    exit 1
+fi
+if ! jq . "$JFILE" > /dev/null 2>&1 ; then
+    echo "$JFILE not in JSON" >&2
+    exit 1
+fi
+if jq "$POS += {$KEY: $J}" "$JFILE" > $OUT ; then
+    mv $OUT "$JFILE"
+    exit 0
+else
+    exit 1
+fi

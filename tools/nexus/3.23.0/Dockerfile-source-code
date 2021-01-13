@@ -1,0 +1,5 @@
+FROM alpine:3.10
+RUN apk add --no-cache -t wget \
+    && cd /tmp \
+    && wget -O nexus.tar.gz  https://download.sonatype.com/nexus/3/nexus-3.23.0-03-unix.tar.gz;\
+       wget -O nexus.tar.gz.asc https://download.sonatype.com/nexus/3/nexus-3.23.0-03-unix.tar.gz.asc

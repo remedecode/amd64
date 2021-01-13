@@ -1,0 +1,8 @@
+FROM registry-jinan-lab.inspurcloud.cn/service/devops/runtime/nginx:1.19
+WORKDIR /usr/share/nginx/html
+ADD ./dist/ /usr/share/nginx/html/
+ENV TZ UTC
+RUN ln -sf /usr/share/zoneinfo/UTC /etc/localtime
+RUN echo "UTC" > /etc/timezone
+EXPOSE 80
+ENTRYPOINT ["nginx","-g","daemon off;"]

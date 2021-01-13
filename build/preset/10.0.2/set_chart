@@ -1,0 +1,232 @@
+#!/bin/bash
+set -ex
+#author: wangshibin@inspur.com
+function setJsonToGitlabDescription(){
+  jsonString=$1
+  jsonStringToParameter=${jsonString//\"/\\\"}
+  jsonStringToParameter=\`$jsonStringToParameter\`
+  echo $jsonStringToParameter
+  return $?
+  break
+}
+
+#从镜像名更改获取，还是直接从chart包中lcm文件夹下cicd-api.yaml文件里维护的信息获取？（data.custom_define.targetTagFromSourceReference），如果chart包中多个镜像呢？
+function getImageKey(){
+  imageNameCut=$1
+  while true
+  do
+     #判断是否包含中划线
+     IS_INCLUDE_HYPHEN=$(echo $imageNameCut | grep -)
+     if [[ -n "$IS_INCLUDE_HYPHEN" ]]; then
+        #如果包含中划线
+        #cicdsss-ooo-api-core
+        #0123456789
+
+        #8
+        HYPHEN_BEHIND_INDEX=`expr index "$imageNameCut" -`
+        #7
+        HYPHEN_INDEX=`expr $HYPHEN_BEHIND_INDEX - 1`
+        #9
+        HYPHEN_BEHIND2_INDEX=`expr $HYPHEN_BEHIND_INDEX + 1`
+
+        #小写字母转大写字母
+        HYPHEN_BEHIND_INDEX_STR=${imageNameCut:HYPHEN_BEHIND_INDEX:1}
+        HYPHEN_BEHIND_INDEX_STR_CAP=`echo $HYPHEN_BEHIND_INDEX_STR | tr 'a-z' 'A-Z'`
+
+        #取0-7 cicdsss
+        a=${imageNameCut:0:HYPHEN_INDEX}
+        #取大写字母 O
+        b=$HYPHEN_BEHIND_INDEX_STR_CAP
+        #取9-最后 oo-api-core
+        c=${imageNameCut:HYPHEN_BEHIND2_INDEX}
+
+        imageNameCut=$a$b$c
+
+     else
+      echo $imageNameCut
+      return $?
+      break
+     fi
+  done
+}
+
+CHARTMESSAGE="`cat /home/jenkins/workspace/$PROJECT-BUILD/chart-message`"
+BUILD_LAST_GIT_COMMIT_ID="`cat /home/jenkins/workspace/$PROJECT-BUILD/git-last-commit`"
+IMAGE_KEY="`cat /home/jenkins/workspace/$PROJECT-BUILD/imagekey-message`"
+echo "Chart项目中要设置的镜像Tag为: "$IMAGE_TAG_SET
+echo "源码中配置的关于Chart项目的信息为: "$CHARTMESSAGE
+BUILD_VERSION=`echo $IMAGE_TAG_SET|cut -d '-' -f1`
+
+array=${CHARTMESSAGE//,/ }
+for var in ${array[@]}
+do
+  chartUrl=`echo $var|cut -d '@' -f 1`
+  TARGET_BRANCH=`echo $var|cut -d '@' -f 2`
+  SOURCE_BRANCH=base-$TARGET_BRANCH
+  cutout1=${chartUrl%.git*}
+  cutout2=${cutout1#*http://git.inspur.com/}
+  gitProjectId=${cutout2////%2F}
+
+  echo $chartUrl > chartUrl
+  sed -i "s/\/\//\/\/oauth2:$DevopsGitProjectApiToken@/g" chartUrl
+  rm -rf /home/jenkins/workspace/$PROJECT-chart
+  git clone --branch=$TARGET_BRANCH `cat chartUrl` /home/jenkins/workspace/$PROJECT-chart
+  cd /home/jenkins/workspace/$PROJECT-chart
+
+
+  #判断远程是否有源分支$SOURCE_BRANCH.
+  tmpHttpCode=`curl -X GET -H 'content-type:application/json;charset=UTF-8' http://git.inspur.com/api/v4/projects/$gitProjectId/repository/branches/$SOURCE_BRANCH?private_token=$DevopsGitProjectApiToken -w %{http_code} -s`
+  httpCode=${tmpHttpCode##*\}}
+  if [[ "${httpCode}" == '200#' ]] || [[ "${httpCode}" == '200' ]]; then
+     echo "gitlab仓库已有${SOURCE_BRANCH}远程分支,本地可以直接创建与远程分支对应的新分支"
+     git checkout -b $SOURCE_BRANCH origin/$SOURCE_BRANCH
+     git merge $TARGET_BRANCH --no-edit
+  elif [[ "${httpCode}" == '404#' ]] || [[ "${httpCode}" == '404' ]]; then
+     echo "gitlab仓库没有"$SOURCE_BRANCH"远程分支,本地需创建新分支$SOURCE_BRANCH"
+     git checkout -b $SOURCE_BRANCH
+  else
+     echo "获取源分支"$SOURCE_BRANCH"失败，返回信息为："$tmpHttpCode
+     exit 1
+  fi
+
+  #更改镜像名为特定的values.yaml中的key值
+  IMAGE_NAME_CUT=${IMAGE_NAME##*/}
+
+  #IMAGE_KEY=`getImageKey $IMAGE_NAME_CUT`
+
+  #修改values.yaml文件
+  oldImageTag=`godev get-value image.$IMAGE_KEY.tag -f values.yaml`
+  IMAGE_KEY_NAME=`godev get-value image.$IMAGE_KEY.name -f values.yaml`
+  IMAGE_KEY_NAME_TRANS=${IMAGE_KEY_NAME/\//\\/}
+  echo "old image tag="$oldImageTag
+  echo "替换镜像tag"
+  #当values.yaml文件中含有多个相同的镜像tag时，需要特定替换
+  sed -i '/name: '"$IMAGE_KEY_NAME_TRANS"'/{n;s/'"$oldImageTag"'/'"$IMAGE_TAG_SET"'/;}' values.yaml
+  #sed -i s/$oldImageTag/$IMAGE_TAG_SET/1 values.yaml
+  git add .
+  #是放到commit信息中，还是放到mr的本身信息中。
+  git commit -m "修改$IMAGE_NAME_CUT镜像tag为$IMAGE_TAG_SET"
+
+
+#根据源分支，目标分支，mr状态 判断远程是否有对应的MR. gitProjectId=inspur-cloud%2Fcharts%2Fcicd-api SOURCE_BRANCH=base-branch-6.2.0 TARGET_BRANCH=branch-6.2.0 DevopsGitProjectApiToken=TRdHxx_tDWzeib5n1suE titleName=test-mr
+#根据源分支，目标分支，mr状态 判断远程是否有对应的MR. gitProjectId=common%2Fcicd-test-project%2Fmr-demo SOURCE_BRANCH=test TARGET_BRANCH=master DevopsGitProjectApiToken=NkiHyQa2gZvgib7cAzRB titleName=test-mr
+  tmpHttpCode1=`curl -X GET -H 'content-type:application/json;charset=UTF-8' http://git.inspur.com/api/v4/projects/$gitProjectId/merge_requests?state=opened\&source_branch=$SOURCE_BRANCH\&target_branch=$TARGET_BRANCH\&private_token=$DevopsGitProjectApiToken -w %{http_code} -s`
+  #状态200代表获取到mr或者空
+  httpCode1=${tmpHttpCode1##*\]}
+  if [[ "${httpCode1}" == '200#' ]] || [[ "${httpCode1}" == '200' ]]; then
+     httpContent1=${tmpHttpCode1%200*}
+     httpContentLength1=${#httpContent1}
+     titleName="测试的镜像tag为$IMAGE_TAG_SET"
+     CURRENT_DESCRIPTION_JSON='{"is_latest":"true","image_key":"'$IMAGE_KEY'","image_key_name":"'$IMAGE_KEY_NAME'","image_tag_set":"'$IMAGE_TAG_SET'","build_id":"'$BUILD_ID'","build_version":"'$BUILD_VERSION'","project_url":"'$BUILD_PROJECT_URL'","branch_name":"'$BUILD_BRANCH_NAME'","build_branch":"'$BUILD_BUILD_BRANCH'","git_last_commit":"'$BUILD_LAST_GIT_COMMIT_ID'"}'
+     if [[ $httpContentLength1 -gt 2 ]]; then
+        #大于2代表远程已有MR,先删除旧的MR,因为Description可能更新，以及即使git push也能够触发已有MR的事件触发，但最好统一走创建MR再自动触发流水线执行
+        echo "远程已有源分支 "$SOURCE_BRANCH" 到目标分支 "$TARGET_BRANCH" 的merge_request,不再创建新的MR,执行更新MR操作"
+        httpContent1Json=${httpContent1#*[}
+        httpContent1Json=${httpContent1Json%]*}
+        echo $httpContent1Json > httpContent1Json.json
+        http_get_description=`jq .description httpContent1Json.json`
+        http_get_description=${http_get_description#*\`}
+        http_get_description=${http_get_description%\`*}
+        http_get_description=${http_get_description//\\/}
+        echo $http_get_description > http_get_description.json
+        description_length=`jq length http_get_description.json`
+        #判断是否已经写入此构建的相关信息
+        #已写入的，更新is_latest,以及其他信息
+        #未写入的，添加is_latest,以及其他信息
+        is_has_write=false
+        for ((i=0; i<description_length; i++))
+        do
+          tmp_image_key=`jq .[$i].image_key http_get_description.json`
+          tmp_image_key="${tmp_image_key//\"/}"
+          if [ $tmp_image_key == $IMAGE_KEY ];then
+              is_has_write=true
+              jq '.['${i}'].is_latest="true"' http_get_description.json > http_get_description_tmp.json
+              mv http_get_description_tmp.json http_get_description.json
+              jq '.['${i}'].image_key_name="'$IMAGE_KEY_NAME'"' http_get_description.json > http_get_description_tmp.json
+              mv http_get_description_tmp.json http_get_description.json
+              jq '.['${i}'].image_tag_set="'$IMAGE_TAG_SET'"' http_get_description.json > http_get_description_tmp.json
+              mv http_get_description_tmp.json http_get_description.json
+              jq '.['${i}'].build_id="'$BUILD_ID'"' http_get_description.json > http_get_description_tmp.json
+              mv http_get_description_tmp.json http_get_description.json
+              jq '.['${i}'].build_version="'$BUILD_VERSION'"' http_get_description.json > http_get_description_tmp.json
+              mv http_get_description_tmp.json http_get_description.json
+              jq '.['${i}'].project_url="'$BUILD_PROJECT_URL'"' http_get_description.json > http_get_description_tmp.json
+              mv http_get_description_tmp.json http_get_description.json
+              jq '.['${i}'].branch_name="'$BUILD_BRANCH_NAME'"' http_get_description.json > http_get_description_tmp.json
+              mv http_get_description_tmp.json http_get_description.json
+              jq '.['${i}'].build_branch="'$BUILD_BUILD_BRANCH'"' http_get_description.json > http_get_description_tmp.json
+              mv http_get_description_tmp.json http_get_description.json
+              jq '.['${i}'].git_last_commit="'$BUILD_LAST_GIT_COMMIT_ID'"' http_get_description.json > http_get_description_tmp.json
+              mv http_get_description_tmp.json http_get_description.json
+          else
+              jq '.['${i}'].is_latest="false"' http_get_description.json > http_get_description_tmp.json
+              mv http_get_description_tmp.json http_get_description.json
+          fi
+        done
+        if [[ "${is_has_write}" == "false" ]];then
+              json_array_append http_get_description.json . $CURRENT_DESCRIPTION_JSON
+        fi
+
+        http_get_description_string=`jq . http_get_description.json -c`
+        description=`setJsonToGitlabDescription $http_get_description_string`
+
+        #先关闭MR，再创建MR，防止
+        merge_request_id=`jq .iid httpContent1Json.json`
+        tmpHttpCode3=`curl -X PUT -H 'content-type:application/json;charset=UTF-8'  -d '{"description":"'${description}'","title":"'${titleName}'","state_event":"close"}' http://git.inspur.com/api/v4/projects/$gitProjectId/merge_requests/$merge_request_id?private_token=$DevopsGitProjectApiToken -w %{http_code} -s`
+        httpCode3=${tmpHttpCode3##*\}}
+        if [[ "${httpCode3}" != '200#' ]] && [[ "${httpCode3}" != '200' ]]; then
+            if [[ "${httpCode3}" == '401#' ]] && [[ "${httpCode3}" == '401' ]]; then
+              echo "关闭MR,请检查构建中的访问令牌是否有权限对Chart项目做MR更新操作"
+            fi
+	        echo "关闭合并请求失败"
+          exit 1
+        fi
+        git push --set-upstream origin $SOURCE_BRANCH
+        tmpHttpCode4=`curl -X PUT -H 'content-type:application/json;charset=UTF-8'  -d '{"state_event":"reopen"}' http://git.inspur.com/api/v4/projects/$gitProjectId/merge_requests/$merge_request_id?private_token=$DevopsGitProjectApiToken -w %{http_code} -s`
+        httpCode4=${tmpHttpCode4##*\}}
+        if [[ "${httpCode4}" != '200#' ]] && [[ "${httpCode4}" != '200' ]]; then
+            if [[ "${httpCode4}" == '401#' ]] && [[ "${httpCode4}" == '401' ]]; then
+              echo "重新打开MR,请检查构建中的访问令牌是否有权限对Chart项目做MR更新操作"
+            fi
+	        echo "重新打开合并请求失败"
+          exit 1
+        fi
+     elif [[ $httpContentLength1 -eq 2 ]]; then
+        #没有MR
+        git push --set-upstream origin $SOURCE_BRANCH
+        echo "创建MergeRequest，源分支："$SOURCE_BRANCH"目标分支：$TARGET_BRANCH"
+        http_set_description_string=[$CURRENT_DESCRIPTION_JSON]
+        description=`setJsonToGitlabDescription $http_set_description_string`
+        tmpHttpCode2=`curl -X POST -H 'content-type:application/json;charset=UTF-8'  -d '{"source_branch":"'${SOURCE_BRANCH}'","target_branch":"'${TARGET_BRANCH}'","title":"'${titleName}'","description":"'${description}'","remove_source_branch":true}' http://git.inspur.com/api/v4/projects/$gitProjectId/merge_requests?private_token=$DevopsGitProjectApiToken -w %{http_code} -s`
+        httpCode2=${tmpHttpCode2##*\}}
+        if [[ "${httpCode2}" != '201#' ]] && [[ "${httpCode2}" != '201' ]]; then
+            if [[ "${httpCode2}" == '401#' ]] && [[ "${httpCode2}" == '401' ]]; then
+              echo "请检查构建中的访问令牌是否有权限对Chart项目做MR操作"
+            fi
+	        echo "合并请求创建失败"
+          exit 1
+        fi
+     else
+        echo "获取MR信息内容长度失败"
+        exit 1
+     fi
+  else
+     echo "获取MR信息失败，返回信息为："$tmpHttpCode1
+     exit 1
+  fi
+  cd /home/jenkins/workspace/$PROJECT
+done
+
+
+
+#shell指令
+#echo ${#string} 字符串长度
+#echo ${string/23/bb}   //abc1bb42341  替换一次
+#echo ${string//23/bb}  //abc1bb4bb41  双斜杠替换所有匹配
+#echo ${path%src*} #从右向左截取第一个 src 后的字符串
+
+#echo ${path%%/*}  #从右向左截取 最后一个 / 后的字符串
+#echo ${path##*/}从左向右截取最后一个 / 后的字符串
+
+#echo ${path#*/}从左向右截取第一个 / 后的字符串
+#echo ${path%/*}#从右向左截取第一个 / 后的字符串
