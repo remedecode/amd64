@@ -1,3 +1,4 @@
+#docker build -t  registry-jinan-lab.inspurcloud.cn/service/devops/runtime/tomcat-jdk8u:8.5.61 .
 FROM alpine:3.12.3 As base
 WORKDIR /
 RUN wget https://mirrors.tuna.tsinghua.edu.cn/apache/tomcat/tomcat-8/v8.5.61/bin/apache-tomcat-8.5.61.tar.gz;\
