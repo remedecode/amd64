@@ -1,4 +1,4 @@
-FROM registry-jinan-lab.inspurcloud.cn/openimage/resource/openjdk8u-download:latest As openjdk-reousrce
+FROM registry.cn-hangzhou.aliyuncs.com/wangshibin/openjdk:update-ziyuan As openjdk-reousrce
 WORKDIR /
 RUN tar -xzvf OpenJDK8U-jdk_x64_linux_8u275b01.tar.gz
 
