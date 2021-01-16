@@ -1,5 +1,5 @@
 #docker build -t registry-jinan-lab.inspurcloud.cn/service/devops/runtime/openjdk:1.8.0_275 .
-FROM registry-jinan-lab.inspurcloud.cn/openimage/resource/openjdk8u-download:1.1.0 As openjdk-reousrce
+FROM registry.cn-hangzhou.aliyuncs.com/wangshibin/openjdk:update-ziyuan As openjdk-reousrce
 WORKDIR /
 COPY setjavaopts.sh /usr/bin/devops/
 RUN set -ex;\
