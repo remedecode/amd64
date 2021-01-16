@@ -21,4 +21,4 @@ fi
 # source  /root/.bashrc
 
 # usage: java $JAVA_OPTS -jar jarName.jar
-java $JAVA_OPTS
+java $JAVA_OPTS 
