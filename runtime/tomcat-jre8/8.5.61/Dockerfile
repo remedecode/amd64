@@ -1,4 +1,4 @@
-FROM registry-jinan-lab.inspurcloud.cn/service/devops/runtime/openjdk:1.8.0_275 AS base
+FROM registry.cn-hangzhou.aliyuncs.com/wangshibin/openjdk:1.8.0_275 AS base
 
 FROM base AS installer
 WORKDIR /
