@@ -1,4 +1,5 @@
-FROM registry.cn-hangzhou.aliyuncs.com/wangshibin/openjdk:update-ziyuan As openjdk-reousrce
+#docker build -t registry-jinan-lab.inspurcloud.cn/service/devops/runtime/openjdk:1.8.0_275 .
+FROM registry-jinan-lab.inspurcloud.cn/openimage/resource/openjdk8u-download:1.1.0 As openjdk-reousrce
 WORKDIR /
 COPY setjavaopts.sh /usr/bin/devops/
 RUN set -ex;\
@@ -23,3 +24,4 @@ COPY --from=openjdk-reousrce /openjdk-8u275-b01 /opt/openjdk-8u275-b01
 COPY --from=openjdk-reousrce /usr/bin/devops/setjavaopts.sh /usr/bin/devops/setjavaopts.sh
 ENV JAVA_HOME=/opt/openjdk-8u275-b01
 ENV PATH=$PATH:$JAVA_HOME/bin
+LABEL maintainer="devops@inspur.com"

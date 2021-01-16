@@ -1,5 +1,5 @@
 # docker build --network host -t registry.icp.com:5000/multiarch/runtime/openjdk:1.8.242 -f Dockerfile ../../../../context-java/
-FROM alpine:3.12.3 AS base
+FROM registry-jinan-lab.inspurcloud.cn/openimage/dockerhub/alpine:3.12.3 AS base
 LABEL maintainer="devops@inspur.com"
 RUN set -ex;\
     apk add --no-cache \
