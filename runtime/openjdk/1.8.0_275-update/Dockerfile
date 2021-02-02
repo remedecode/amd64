@@ -14,6 +14,7 @@ RUN apk add --no-cache bash curl busybox-extras openssl git fontconfig ttf-dejav
     apk add --no-cache glibc-2.32-r0.apk dos2unix file ca-certificates tzdata procps libltdl libgcc libstdc++;\
     rm -rf glibc-2.32-r0.apk;\
     rm -rf /var/cache/apk/*;
+    # libc6-compat安装报错
 
 FROM base
 ENV TZ=GMT
